@@ -48,26 +48,39 @@ Candidates are ranked by Final Score
 Step 7
 Dashboard displays results
 
-🏗️ Project Structure
-AI Resume Matching Agent
+# 🏗️ Project Structure
+
+AI-Resume-Matching-Agent/
 │
 ├── app.py
 ├── requirements.txt
 ├── README.md
 │
-└── src
-    ├── agents
+└── src/
+    ├── agents/
+    │   ├── interview_prep.py
+    │   ├── jd_analyzer.py
+    │   ├── matcher.py
+    │   ├── ranker.py
     │   ├── recruiter_matcher.py
-    │   └── ranker.py
+    │   └── resume_parser.py
     │
-    ├── llm
+    ├── graph/
+    │   └── workflow.py
+    │
+    ├── llm/
     │   └── llm_config.py
     │
-    ├── utils
-    │   └── file_handler.py
+    ├── models/
+    │   └── schema.py
     │
-    └── models
-        └── schema.py
+    ├── prompts/
+    │   └── prompts.py
+    │
+    └── utils/
+        ├── file_handler.py
+        ├── pdf_reader.py
+        └── text_cleaner.py
 ⚙️ Tech Stack
 
 Python
