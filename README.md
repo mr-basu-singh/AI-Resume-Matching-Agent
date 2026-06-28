@@ -274,7 +274,7 @@ http://localhost:8501
 
 Kumar Basu Singh  
 B.Tech Electrical & Electronics Engineering  
-Agentic AI Developer
+AI Agentic Engineer
 
 Built using multi-agent architecture and LLMs.
 
