@@ -4,8 +4,6 @@ from langchain_groq import ChatGroq
 
 load_dotenv()
 
-def get_llm():
-    return ChatGroq(
-        model="llama-3.3-70b-versatile",
-        temperature=0
-    )
+# --------------------------------------------------
+# SINGLETON: reuse one client instead of creating a
+#
