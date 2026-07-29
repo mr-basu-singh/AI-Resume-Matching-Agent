@@ -93,31 +93,32 @@ class ParsedResume(BaseModel):
 
 
 # ======================================================
+# ONE SKILL'S EVIDENCE-GROUNDED ASSESSMENT
+# Forcing the LLM to cite evidence per skill (instead of a
+# bare true/false) is what keeps it from hallucinating matches
+# or missing skills that are literally spelled out in the resume.
+# ======================================================
+class SkillEvidence(BaseModel):
+    skill: str = Field(description="The exact skill string, copied verbatim from the list given to you")
+    matched: bool = Field(description="True only if you found direct, explicit evidence in the resume")
+    evidence: str = Field(
+        description=(
+            "The exact quote or close paraphrase from the resume's skills/projects/experience "
+            "that justifies this decision. If matched=False, write 'No evidence found.'"
+        )
+    )
+
+
+# ======================================================
 # THE THINGS THAT NEED GENUINE JUDGMENT, NOT JUST COUNTING:
 # skill matching (semantic - does the resume provide real
 # evidence, even under a different name?), project relevance,
 # and education-field relatedness
 # ======================================================
 class SectionJudgment(BaseModel):
-    matched_required_skills: List[str] = Field(
+    skill_assessment: List[SkillEvidence] = Field(
         default_factory=list,
-        description=(
-            "Copy the EXACT strings (verbatim) from the required skills list that this "
-            "candidate's resume shows real evidence for - based on their skills list, "
-            "project descriptions, and experience together, not just literal keyword "
-            "matches. E.g. a candidate listing 'FAISS, ChromaDB, Embeddings' has evidence "
-            "of a 'RAG and retrieval systems' requirement even without using that exact "
-            "phrase; a project literally about building an evaluation platform is evidence "
-            "of an 'LLM evals' requirement."
-        )
-    )
-    matched_preferred_skills: List[str] = Field(
-        default_factory=list,
-        description="Copy the EXACT strings (verbatim) from the preferred skills list the resume shows evidence for"
-    )
-    missing_required_skills: List[str] = Field(
-        default_factory=list,
-        description="Copy the EXACT strings (verbatim) from the required skills list with NO real evidence anywhere in the resume"
+        description="One entry for EVERY required and preferred skill given to you, each with its own evidence"
     )
 
     project_score: int = Field(

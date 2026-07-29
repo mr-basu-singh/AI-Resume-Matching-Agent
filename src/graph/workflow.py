@@ -43,12 +43,13 @@ def scoring_node(state):
 
     for i, r in enumerate(state["resumes"]):
         file_name = r["name"] if isinstance(r, dict) else "unknown_resume.pdf"
+        resume_text = r["text"] if isinstance(r, dict) else r
         parsed_resume = parsed_resumes[i] if i < len(parsed_resumes) else None
 
         if parsed_resume is None:
             continue
 
-        result = score_candidate(jd_requirements, parsed_resume, file_name)
+        result = score_candidate(jd_requirements, parsed_resume, file_name, resume_text)
         scores.append(result)
 
     state["scores"] = scores

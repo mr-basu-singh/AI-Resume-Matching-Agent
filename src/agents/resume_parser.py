@@ -14,6 +14,14 @@ Rules:
   experience. If the resume shows no professional work history at all (e.g. a fresher
   or student resume with no internship/job), use 0.
 - education_field / education_level: based on the highest degree mentioned.
+- projects: for EACH project, write a substantive one-to-two sentence description that
+  captures what it actually does, the key techniques/methods used, and the technologies
+  involved - pull this from the resume's bullet points under that project, not just the
+  project's title. A bare title like "AIForge: AI Evaluation Platform" is NOT enough;
+  write something like "AIForge: AI Evaluation & Agent Testing Platform - built a
+  benchmarking system evaluating 4 LLMs using LLM-as-a-Judge metrics and a hallucination
+  detection system, validated with a unit test suite." This detail is what a later step
+  uses to judge whether the candidate has specific skills, so do not compress it away.
 
 Resume:
 {resume_text}
