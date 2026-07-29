@@ -1,16 +1,20 @@
 """
 Section-by-section candidate scoring against a JD.
 
-Skill and experience scores are computed in plain Python from the structured
-JD requirements and parsed resume - both are things that can be counted or
-measured exactly (does the skill appear? how many months of experience vs.
-how many required?), and LLMs are unreliable at precise arithmetic, so we
-never ask the LLM to invent these numbers itself.
+Experience math is done in plain Python from LLM-extracted raw numbers
+(months of experience vs. months required) - that's exact arithmetic,
+and LLMs are unreliable at precise arithmetic, so we never ask the LLM
+to invent that percentage itself.
 
-Project relevance and education-field relatedness genuinely need judgment
-(e.g. "JD wants Computer Science, candidate has Electrical Engineering -
-how related is that, really?"), so those two scores come from one LLM call
-that's given an explicit rubric to follow.
+Skill matching, project relevance, and education-field relatedness all
+genuinely need semantic judgment, not string comparison. A resume that
+lists "FAISS, ChromaDB, Embeddings" clearly has "RAG and retrieval
+systems" experience even without using that exact phrase - a naive
+keyword/substring match would score that 0, which is wrong. So all
+three go through one LLM call that sees the candidate's full context
+(skills list + projects + experience), with the final skill PERCENTAGE
+still computed deterministically in Python from the LLM's matched/
+missing lists.
 """
 
 from src.llm.llm_config import get_llm
@@ -25,54 +29,6 @@ SKILL_WEIGHT = 0.40
 PROJECT_WEIGHT = 0.30
 EXPERIENCE_WEIGHT = 0.20
 EDUCATION_WEIGHT = 0.10
-
-
-# ======================================================
-# SKILL SCORE (deterministic)
-# ======================================================
-def _normalize(skill: str) -> str:
-    return skill.strip().lower()
-
-
-def _skill_present(required_skill: str, candidate_skills: list) -> bool:
-    req = _normalize(required_skill)
-    if not req:
-        return False
-
-    for cs in candidate_skills:
-        cs_norm = _normalize(cs)
-        if not cs_norm:
-            continue
-        # exact match, or one contains the other (handles "React" vs "React.js" etc.)
-        if req == cs_norm or req in cs_norm or cs_norm in req:
-            return True
-
-    return False
-
-
-def score_skills(jd: JDRequirements, resume: ParsedResume):
-    candidate_skills = [s for s in resume.candidate_skills if s and s.strip()]
-    required = [s for s in jd.required_skills if s and s.strip()]
-    preferred = [s for s in jd.preferred_skills if s and s.strip()]
-
-    if not required and not preferred:
-        # JD didn't specify concrete skills - nothing to penalize against
-        return 100, [], []
-
-    matched_required = [s for s in required if _skill_present(s, candidate_skills)]
-    matched_preferred = [s for s in preferred if _skill_present(s, candidate_skills)]
-    missing_required = [s for s in required if s not in matched_required]
-
-    required_weight = len(required) * 1.0
-    preferred_weight = len(preferred) * 0.5
-    total_weight = required_weight + preferred_weight
-
-    earned = len(matched_required) * 1.0 + len(matched_preferred) * 0.5
-
-    skill_score = round(min(earned / total_weight, 1.0) * 100) if total_weight > 0 else 100
-    matched_skills = matched_required + matched_preferred
-
-    return skill_score, matched_skills, missing_required
 
 
 # ======================================================
@@ -120,9 +76,36 @@ def score_experience(jd: JDRequirements, resume: ParsedResume):
 
 
 # ======================================================
-# PROJECT + EDUCATION SCORE (LLM judgment)
+# SKILL SCORE (deterministic math on top of LLM classification)
 # ======================================================
-PROJECT_EDU_PROMPT = """
+def score_skills_from_judgment(jd: JDRequirements, judgment: SectionJudgment):
+    required = [s for s in jd.required_skills if s and s.strip()]
+    preferred = [s for s in jd.preferred_skills if s and s.strip()]
+
+    if not required and not preferred:
+        # JD didn't specify concrete skills - nothing to penalize against
+        return 100, [], []
+
+    matched_required = [s for s in required if s in judgment.matched_required_skills]
+    matched_preferred = [s for s in preferred if s in judgment.matched_preferred_skills]
+    missing_required = [s for s in required if s not in matched_required]
+
+    required_weight = len(required) * 1.0
+    preferred_weight = len(preferred) * 0.5
+    total_weight = required_weight + preferred_weight
+
+    earned = len(matched_required) * 1.0 + len(matched_preferred) * 0.5
+
+    skill_score = round(min(earned / total_weight, 1.0) * 100) if total_weight > 0 else 100
+    matched_skills = matched_required + matched_preferred
+
+    return skill_score, matched_skills, missing_required
+
+
+# ======================================================
+# SKILL MATCH + PROJECT + EDUCATION JUDGMENT (LLM)
+# ======================================================
+JUDGMENT_PROMPT = """
 You are an expert technical recruiter judging ONE candidate for a specific role.
 
 ========================
@@ -130,9 +113,20 @@ ROLE REQUIREMENTS
 ========================
 Role: {role_title}
 What HR needs: {key_requirements_summary}
-Required skills: {required_skills}
+
+Required skills:
+{required_skills}
+
+Preferred skills:
+{preferred_skills}
+
 Required education field: {required_education_field}
 Required education level: {required_education_level}
+
+========================
+CANDIDATE'S LISTED SKILLS
+========================
+{candidate_skills}
 
 ========================
 CANDIDATE'S PROJECTS
@@ -140,44 +134,58 @@ CANDIDATE'S PROJECTS
 {projects}
 
 ========================
+CANDIDATE'S EXPERIENCE SUMMARY
+========================
+{experience_summary}
+
+========================
 CANDIDATE'S EDUCATION
 ========================
 {education_details}
 (Field: {education_field}, Level: {education_level})
 
-Score this candidate on:
+Do three things:
 
-1. project_score (0-100): how relevant and strong are their projects for this specific
+1. SKILL MATCHING: for each required and preferred skill listed above, decide if the
+   candidate's resume shows REAL evidence for it - look at their skills list, project
+   descriptions, and experience together, not just an exact keyword match. Example: a
+   candidate listing "FAISS, ChromaDB, Embeddings" has evidence of "RAG and retrieval
+   systems" even without using that exact phrase. A project literally about building an
+   evaluation/benchmarking platform is evidence of "LLM evals" experience. Do not give
+   credit for a skill with no real signal anywhere in the resume. Copy the matched/missing
+   skill strings back EXACTLY as given above (verbatim), so they can be matched programmatically.
+
+2. project_score (0-100): how relevant and strong are their projects for this specific
    role's requirements? No projects listed should not automatically mean 0 - use a low
-   but non-zero score (10-20) if everything else about the resume is otherwise reasonable,
-   since not every good candidate lists projects.
+   but non-zero score (10-20) if everything else is otherwise reasonable.
 
-2. education_score (0-100): how well their education matches what the JD needs.
-   - Same/matching field as required = 85-100
-   - A closely related technical field (e.g. JD wants Computer Science and candidate
-     studied Electrical/Electronics/IT/Information Systems, or vice versa) = 45-65,
-     this is PARTIAL CREDIT - never treat a related engineering field as a total mismatch
-   - Clearly unrelated field (e.g. JD wants Computer Science, candidate studied
-     Commerce/Arts with no technical coursework) = 10-30
-   - If the JD does not specify a required field at all, judge based on level only and
-     lean toward 80-100 unless the candidate has no formal education mentioned.
+3. education_score (0-100): how well their education matches what the JD needs.
+   - If required_education_field above is "Not specified", you MUST score 80-100 based
+     on level only - do not penalize for field when the JD didn't ask for one.
+   - If a field WAS specified: same/matching field = 85-100; a closely related technical
+     field (e.g. JD wants Computer Science, candidate has Electrical/Electronics/IT) =
+     45-65 partial credit, never treat a related engineering field as a total mismatch;
+     a clearly unrelated field = 10-30.
 
-Explain both scores briefly, and give one overall one-to-two sentence summary of why
-this candidate lands where they do.
+Explain the project and education scores briefly, and give one overall one-to-two
+sentence summary of why this candidate lands where they do.
 """
 
 
-def score_projects_and_education(jd: JDRequirements, resume: ParsedResume) -> SectionJudgment:
+def judge_candidate(jd: JDRequirements, resume: ParsedResume) -> SectionJudgment:
     llm = get_llm()
     structured_llm = llm.with_structured_output(SectionJudgment)
 
-    prompt = PROJECT_EDU_PROMPT.format(
+    prompt = JUDGMENT_PROMPT.format(
         role_title=jd.role_title or "N/A",
         key_requirements_summary=jd.key_requirements_summary or "N/A",
-        required_skills=", ".join(jd.required_skills) or "N/A",
+        required_skills="\n".join(f"- {s}" for s in jd.required_skills) or "None specified",
+        preferred_skills="\n".join(f"- {s}" for s in jd.preferred_skills) or "None specified",
         required_education_field=jd.required_education_field or "Not specified",
         required_education_level=jd.required_education_level or "Not specified",
+        candidate_skills=", ".join(resume.candidate_skills) or "None listed",
         projects="\n".join(f"- {p}" for p in resume.projects) or "No projects listed",
+        experience_summary=resume.experience_summary or "N/A",
         education_details=resume.education_details or "Not specified",
         education_field=resume.education_field or "Not specified",
         education_level=resume.education_level or "Not specified",
@@ -187,6 +195,9 @@ def score_projects_and_education(jd: JDRequirements, resume: ParsedResume) -> Se
         return structured_llm.invoke(prompt)
     except Exception as e:
         return SectionJudgment(
+            matched_required_skills=[],
+            matched_preferred_skills=[],
+            missing_required_skills=list(jd.required_skills),
             project_score=0,
             project_reason=f"Scoring failed: {e}",
             education_score=0,
@@ -199,9 +210,10 @@ def score_projects_and_education(jd: JDRequirements, resume: ParsedResume) -> Se
 # COMBINE EVERYTHING INTO ONE CANDIDATE RESULT
 # ======================================================
 def score_candidate(jd: JDRequirements, resume: ParsedResume, file_name: str) -> dict:
-    skill_score, matched_skills, missing_skills = score_skills(jd, resume)
+    judgment = judge_candidate(jd, resume)
+
+    skill_score, matched_skills, missing_skills = score_skills_from_judgment(jd, judgment)
     experience_score, experience_detail = score_experience(jd, resume)
-    judgment = score_projects_and_education(jd, resume)
 
     final_score = round(
         skill_score * SKILL_WEIGHT
