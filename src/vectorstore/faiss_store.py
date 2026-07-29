@@ -26,10 +26,10 @@ metadata_store = []
 
 if os.path.exists(INDEX_PATH):
     index = faiss.read_index(INDEX_PATH)
-    print("✅ FAISS index loaded")
+    print("FAISS index loaded")
 else:
     index = faiss.IndexFlatL2(DIM)
-    print("🆕 New FAISS index created")
+    print("New FAISS index created")
 
 
 # -----------------------------
@@ -89,11 +89,36 @@ def add_document(text: str, meta: dict):
     index.add(vector)
 
     metadata_store.append({
-        "text": text,               # 🔥 IMPORTANT: full resume text
+        "text": text,
         "name": meta.get("name", "unknown")
     })
 
     save_all()
 
 
-# -------------------------
+# -----------------------------
+# SEARCH (IMPROVED RAG OUTPUT)
+# -----------------------------
+def search(query: str, k: int = 3):
+    if index.ntotal == 0:
+        return []
+
+    query_vec = np.array([get_embedding(query)]).astype("float32")
+
+    distances, indices = index.search(query_vec, k)
+
+    results = []
+
+    for i, dist in zip(indices[0], distances[0]):
+
+        if 0 <= i < len(metadata_store):
+
+            item = metadata_store[i]
+
+            results.append({
+                "name": item["name"],
+                "text": item["text"][:500],
+                "score": float(dist)
+            })
+
+    return results

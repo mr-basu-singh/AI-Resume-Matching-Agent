@@ -133,4 +133,70 @@ def score_candidate_against_jd(resume_text: str, job_description: str, file_name
     # --------------------------------------------------
     skill_score, matched_skills = calculate_match_score(resume, jd_keywords)
 
-    # ------------------------------
+    # --------------------------------------------------
+    # EXPERIENCE SCORE (CONTEXT AWARE)
+    # --------------------------------------------------
+    experience_score = calculate_experience_score(resume)
+
+    # --------------------------------------------------
+    # PROJECT SCORE (DOMAIN FREE)
+    # --------------------------------------------------
+    project_score = 50
+
+    if "project" in resume or "developed" in resume or "built" in resume:
+        project_score = 80
+
+    # --------------------------------------------------
+    # EDUCATION SCORE (GENERIC)
+    # --------------------------------------------------
+    education_score = 60
+
+    if any(x in resume for x in ["b.tech", "btech", "bachelor", "master", "degree"]):
+        education_score = 80
+
+    # --------------------------------------------------
+    # FINAL SCORE (BALANCED ATS MODEL)
+    # --------------------------------------------------
+    final_score = int(
+        skill_score * 0.6 +
+        experience_score * 0.2 +
+        project_score * 0.15 +
+        education_score * 0.05
+    )
+
+    final_score = min(final_score, 100)
+
+    # --------------------------------------------------
+    # RECOMMENDATION
+    # --------------------------------------------------
+    if final_score >= 80:
+        recommendation = "Strong Fit"
+    elif final_score >= 60:
+        recommendation = "Moderate Fit"
+    elif final_score >= 40:
+        recommendation = "Stretch Fit"
+    else:
+        recommendation = "Not Recommended"
+
+    # --------------------------------------------------
+    # REASON (EXPLAINABLE AI STYLE)
+    # --------------------------------------------------
+    reason = (
+        f"Matched {len(matched_skills)} of {len(jd_keywords)} JD keywords."
+    )
+
+    # --------------------------------------------------
+    # OUTPUT
+    # --------------------------------------------------
+    return {
+        "Candidate Name": file_name,
+        "Skill Score": skill_score,
+        "Experience Score": experience_score,
+        "Project Score": project_score,
+        "Education Score": education_score,
+        "Final Score": final_score,
+        "Matched Skills": matched_skills,
+        "Missing Skills": list(set(jd_keywords) - set(matched_skills)),
+        "Recommendation": recommendation,
+        "Reason": reason
+    }

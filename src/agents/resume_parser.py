@@ -6,4 +6,11 @@ def parse_resume(resume_text: str) -> str:
         return "No resume text could be extracted from this file."
 
     llm = get_llm()
-    pro
+    prompt = RESUME_PARSER_PROMPT.format(resume_text=resume_text)
+
+    try:
+        response = llm.invoke(prompt)
+        return response.content
+    except Exception as e:
+        # Don't let one LLM/API hiccup crash the whole batch run
+        return f"Resume parsing failed: {e}"
