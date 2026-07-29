@@ -1,15 +1,12 @@
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, List, Any
 
 
 class ResumeState(TypedDict):
     job_description: str
-    resumes: List[str]
+    resumes: List[Any]  # each item: str, or {"name": str, "text": str}
 
-    parsed_resumes: List[dict]
-    jd_analysis: Dict[str, Any]
-    rag_context: str
+    parsed_resumes: List[Any]  # List[ParsedResume]
+    jd_requirements: Any        # JDRequirements
 
-    embeddings: List[List[float]]
-    vector_results: List[dict]
-
-    scores: List
+    scores: List[dict]
+    ranked: Any                 # pandas DataFrame
