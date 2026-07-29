@@ -10,35 +10,20 @@ from src.agents.ranker import rank_candidates
 from src.graph.workflow import app as langgraph_app
 
 
-# ======================================================
-# PAGE CONFIG
-# ======================================================
 st.set_page_config(
     page_title="AI Resume Matching Agent",
     page_icon="📄",
     layout="wide"
 )
 
-
-# ======================================================
-# UI TITLE
-# ======================================================
 st.title("📄 AI Resume Matching Agent")
 st.subheader("Smart ATS System for Resume Screening & Ranking")
 
-
-# ======================================================
-# MODE SELECTION
-# ======================================================
 mode = st.radio(
     "Select Mode",
     ["Old System (Rule Based)", "LangGraph + RAG (AI System)"]
 )
 
-
-# ======================================================
-# INPUT SECTION
-# ======================================================
 job_description = st.text_area("Paste Job Description", height=200)
 
 uploaded_files = st.file_uploader(
@@ -49,19 +34,12 @@ uploaded_files = st.file_uploader(
 
 min_score = st.slider("Minimum Score Filter", 0, 100, 0)
 
-
-# ======================================================
-# RUN BUTTON
-# ======================================================
 if st.button("Run Screening"):
 
     if not job_description or not uploaded_files:
         st.warning("Please provide JD and resumes")
         st.stop()
 
-    # --------------------------------------------------
-    # EXTRACT RESUMES
-    # --------------------------------------------------
     resumes = []
     resume_data = []
 
@@ -88,10 +66,6 @@ if st.button("Run Screening"):
         st.error("None of the uploaded resumes could be read. Please upload text-based PDFs.")
         st.stop()
 
-
-    # ======================================================
-    # OLD SYSTEM
-    # ======================================================
     if mode == "Old System (Rule Based)":
 
         results = []
@@ -106,10 +80,6 @@ if st.button("Run Screening"):
 
         ranked_df = rank_candidates(results)
 
-
-    # ======================================================
-    # LANGGRAPH SYSTEM
-    # ======================================================
     else:
 
         output = langgraph_app.invoke({
@@ -119,10 +89,6 @@ if st.button("Run Screening"):
 
         ranked_df = output["ranked"]
 
-
-    # ======================================================
-    # FILTERING
-    # ======================================================
     ranked_df = ranked_df[
         ranked_df["Final Score"] >= min_score
     ].reset_index(drop=True)
@@ -131,16 +97,11 @@ if st.button("Run Screening"):
         st.warning("No candidates meet the minimum score filter.")
         st.stop()
 
-    # ❌ FIX: avoid duplicate Rank column error
     if "Rank" in ranked_df.columns:
         ranked_df = ranked_df.drop(columns=["Rank"])
 
     ranked_df.insert(0, "Rank", ranked_df.index + 1)
 
-
-    # ======================================================
-    # METRICS
-    # ======================================================
     st.success("Screening Completed")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -150,17 +111,9 @@ if st.button("Run Screening"):
     col3.metric("Average Score", int(ranked_df["Final Score"].mean()))
     col4.metric("Filtered", len(ranked_df))
 
-
-    # ======================================================
-    # DISPLAY TABLE
-    # ======================================================
     st.markdown("## 📊 Ranking Table")
     st.dataframe(ranked_df, use_container_width=True)
 
-
-    # ======================================================
-    # DOWNLOAD CSV
-    # ======================================================
     csv = ranked_df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
@@ -170,12 +123,32 @@ if st.button("Run Screening"):
         mime="text/csv"
     )
 
-
-    # ======================================================
-    # DETAILED VIEW (RECRUITER STYLE)
-    # ======================================================
     st.markdown("## 👤 Candidate Details")
 
     for _, row in ranked_df.iterrows():
 
-        with st.expander(f"{row['Ran
+        with st.expander(f"{row['Rank']}. {row['Candidate Name']} | {row['Final Score']}%"):
+
+            st.markdown(f"""
+### {row['Candidate Name'].replace('.pdf','')}
+
+**{row['Final Score']}%**
+**{row['Recommendation']}**
+
+---
+
+**Skill Score:** {row['Skill Score']}
+**Experience Score:** {row['Experience Score']}
+**Project Score:** {row['Project Score']}
+**Education Score:** {row['Education Score']}
+
+---
+
+**Matched Skills:**
+{", ".join(row['Matched Skills']) if isinstance(row['Matched Skills'], list) else row['Matched Skills']}
+
+---
+
+**Reason:**
+{row['Reason']}
+""")
