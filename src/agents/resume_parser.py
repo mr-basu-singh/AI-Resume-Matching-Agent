@@ -8,7 +8,14 @@ information about the candidate. Be strict and literal - only extract what is ac
 written in the resume, do not assume or invent information.
 
 Rules:
-- candidate_skills: list every technical/professional skill actually mentioned.
+- candidate_skills: list every technical/professional skill mentioned ANYWHERE in the
+  resume - not just under a dedicated "Skills" header. Many candidates only mention a
+  tool or technology inside a project bullet or job description (e.g. "built a REST API
+  using FastAPI and deployed it with Docker") without repeating it in a formal skills
+  section. Scan the summary, the skills section, every project description, every work
+  experience bullet, and certifications for any tool, technology, framework, language,
+  or competency mentioned, and include ALL of them here - do not limit yourself to what's
+  under a formal "Skills:" heading.
 - total_experience_months: count ONLY real professional/work experience (internships
   count). Coursework, personal/academic projects, and certifications are NOT work
   experience. If the resume shows no professional work history at all (e.g. a fresher

@@ -6,22 +6,35 @@ Experience math is done in plain Python from LLM-extracted raw numbers
 and LLMs are unreliable at precise arithmetic, so we never ask the LLM
 to invent that percentage itself.
 
-Skill matching, project relevance, and education-field relatedness all
-genuinely need semantic judgment, not string comparison - but semantic
-judgment without grounding is exactly how an LLM hallucinates ("Fine-tuning"
-credited for a candidate who only ever evaluated pre-trained models) or
-misses obvious matches ("Tool Calling" marked missing when it's spelled
-out verbatim in the resume). To fight that, the LLM must produce a
-per-skill evidence quote before deciding match/no-match (SkillEvidence),
-and the final skill PERCENTAGE is still computed deterministically in
-Python from those verdicts - only the classification itself is the LLM's job.
+Skill matching is two-stage, the way real ATS/resume-screening pipelines
+(Workday, Greenhouse, LinkedIn Recruiter and similar) actually do it:
 
-The judgment call also gets the ORIGINAL raw resume text, not just the
-already-summarized ParsedResume fields, as a fallback reference - so a
-detail that got compressed away during the first extraction pass (e.g.
-a tech mentioned in a project's tech-stack line but not its description)
-can still be found instead of being lost to double summarization.
+  1. A deterministic keyword/phrase scan across the ENTIRE raw resume
+     text - not just a parsed "skills" list, and not dependent on any
+     LLM call. If a required skill (or an obvious sub-phrase of a
+     compound one, e.g. "Tool Calling" inside "Function/Tool Calling")
+     appears literally anywhere in the resume - the skills section, a
+     project bullet, a job description, anywhere - it's matched. This
+     can never be missed by an LLM attention slip, because no LLM is
+     involved in this pass at all.
+
+  2. An LLM semantic judgment pass for skills that AREN'T a literal
+     text match - things like a resume that lists "FAISS, ChromaDB,
+     Embeddings" clearly having "RAG and retrieval systems" skill even
+     without using that exact phrase. This pass must cite evidence for
+     every verdict (SkillEvidence) so it can't hallucinate a match, and
+     defaults to "missing" when evidence is weak or indirect.
+
+A skill counts as matched if EITHER stage found it. The final skill
+PERCENTAGE is still computed deterministically in Python from those
+verdicts - only the classification itself is delegated to keyword
+matching / the LLM, never the arithmetic.
+
+Project relevance and education-field relatedness also come from the
+same LLM call, using the same evidence-based rubric.
 """
+
+import re
 
 from src.llm.llm_config import get_llm
 from src.models.schema import JDRequirements, ParsedResume, SectionJudgment
@@ -82,10 +95,58 @@ def score_experience(jd: JDRequirements, resume: ParsedResume):
 
 
 # ======================================================
-# SKILL SCORE (deterministic math on top of the LLM's
-# evidence-grounded per-skill verdicts)
+# STAGE 1: DETERMINISTIC KEYWORD SCAN (no LLM involved)
 # ======================================================
-def score_skills_from_judgment(jd: JDRequirements, judgment: SectionJudgment):
+def _normalize_text(text: str) -> str:
+    return re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())
+
+
+def deterministic_skill_match(skill: str, normalized_resume_text: str) -> bool:
+    """
+    Exact/near-exact match of a required skill against the FULL raw resume
+    text (skills section, project bullets, experience bullets - everywhere).
+    Compound skill names like "Function/Tool Calling" are split so that a
+    resume containing just "Tool Calling" still counts as a real, literal
+    match. Only whole phrases or clearly delineated sub-phrases are checked -
+    never a single generic short word alone (so "Model Training" won't
+    false-positive off a stray word like "train" appearing elsewhere).
+    """
+    if not normalized_resume_text:
+        return False
+
+    skill_norm = _normalize_text(skill).strip()
+    if not skill_norm:
+        return False
+
+    candidates = {skill_norm}
+    lowered = skill.lower()
+    for sep in ["/", ",", " or ", " and "]:
+        if sep in lowered:
+            for part in lowered.split(sep):
+                p = _normalize_text(part).strip()
+                if p:
+                    candidates.add(p)
+
+    for c in candidates:
+        words = c.split()
+        if not words:
+            continue
+        if len(words) == 1 and len(c) <= 4:
+            # short single token (e.g. "api", "aws") - require a real word
+            # boundary match, not a bare substring, to avoid noise
+            if re.search(rf"\b{re.escape(c)}\b", normalized_resume_text):
+                return True
+        elif c in normalized_resume_text:
+            return True
+
+    return False
+
+
+# ======================================================
+# COMBINE STAGE 1 (keyword scan) + STAGE 2 (LLM judgment)
+# INTO THE FINAL SKILL SCORE (deterministic math)
+# ======================================================
+def score_skills(jd: JDRequirements, judgment: SectionJudgment, resume_text: str = ""):
     required = [s for s in jd.required_skills if s and s.strip()]
     preferred = [s for s in jd.preferred_skills if s and s.strip()]
 
@@ -93,10 +154,19 @@ def score_skills_from_judgment(jd: JDRequirements, judgment: SectionJudgment):
         # JD didn't specify concrete skills - nothing to penalize against
         return 100, [], []
 
-    verdict = {ev.skill.strip().lower(): bool(ev.matched) for ev in judgment.skill_assessment}
+    llm_verdict = {ev.skill.strip().lower(): bool(ev.matched) for ev in judgment.skill_assessment}
+    normalized_resume_text = _normalize_text(resume_text)
 
-    matched_required = [s for s in required if verdict.get(s.strip().lower(), False)]
-    matched_preferred = [s for s in preferred if verdict.get(s.strip().lower(), False)]
+    def is_matched(skill: str) -> bool:
+        # Stage 1 first: a literal match in the resume text always counts,
+        # regardless of what the LLM said.
+        if deterministic_skill_match(skill, normalized_resume_text):
+            return True
+        # Stage 2: fall back to the LLM's evidence-grounded semantic verdict.
+        return llm_verdict.get(skill.strip().lower(), False)
+
+    matched_required = [s for s in required if is_matched(s)]
+    matched_preferred = [s for s in preferred if is_matched(s)]
     missing_required = [s for s in required if s not in matched_required]
 
     required_weight = len(required) * 1.0
@@ -112,7 +182,7 @@ def score_skills_from_judgment(jd: JDRequirements, judgment: SectionJudgment):
 
 
 # ======================================================
-# SKILL MATCH + PROJECT + EDUCATION JUDGMENT (LLM)
+# STAGE 2: SKILL MATCH + PROJECT + EDUCATION JUDGMENT (LLM)
 # ======================================================
 JUDGMENT_PROMPT = """
 You are an expert technical recruiter judging ONE candidate for a specific role.
@@ -157,37 +227,34 @@ CANDIDATE'S EDUCATION
 (Field: {education_field}, Level: {education_level})
 
 ========================
-ORIGINAL FULL RESUME TEXT (fallback reference only - use this to double-check for
-evidence that may have been compressed out of the structured extraction above, e.g.
-a technology mentioned in a project's tech-stack line but not its description)
+ORIGINAL FULL RESUME TEXT (search this too - a skill can be mentioned inside a
+project bullet or job description without being repeated in a skills list)
 ========================
 {raw_resume_text}
 
 TASK 1 - SKILL ASSESSMENT (skill_assessment field):
 For EVERY skill listed under "Required skills" and "Preferred skills" above, produce one
 entry with: the exact skill string (copied verbatim), matched (true/false), and evidence
-(a direct quote or close paraphrase from the candidate's skills/projects/experience/full
-resume text, or "No evidence found." if none).
+(a direct quote or close paraphrase from ANYWHERE in the candidate's resume - skills list,
+project descriptions, experience, or the full resume text - or "No evidence found." if none).
 
 STRICT RULES - DO NOT HALLUCINATE:
-- If a skill name, or an obvious synonym or substring of it, appears literally anywhere
-  in the candidate's skills list or the full resume text, that IS direct evidence.
-  Example: required skill is "Function/Tool Calling" and the candidate's skills list
-  contains "Tool Calling" - that MUST be marked matched=true, because "Tool Calling" is
-  explicitly, literally there. Do not require perfect wording symmetry.
+- Search the WHOLE resume, not just the skills list. Many candidates only mention a tool
+  or technology inside a project bullet or job description (e.g. "built with FastAPI and
+  Docker") without repeating it in a formal skills section - that still counts as evidence.
+- If a skill name, or an obvious synonym or substring of it, appears literally anywhere in
+  the resume, that IS direct evidence. Example: required skill is "Function/Tool Calling"
+  and the resume contains "Tool Calling" - that MUST be matched=true. Do not require
+  perfect wording symmetry.
 - Evaluating, benchmarking, comparing, or selecting between existing/pre-trained models
-  (e.g. "compared 4 LLMs and identified the best one", "benchmarked model quality vs
-  cost") is NOT the same as "Fine-tuning" or "Model Training". Only mark those matched
-  if the resume explicitly describes training a model, fine-tuning weights, or adjusting
-  model parameters on custom data - not just using, calling, evaluating, or picking
-  between models via an API.
+  (e.g. "compared 4 LLMs and identified the best one") is NOT the same as "Fine-tuning" or
+  "Model Training". Only mark those matched if the resume explicitly describes training a
+  model, fine-tuning weights, or adjusting model parameters on custom data.
 - Do not infer a skill just because the candidate works in a related area. Building RAG
-  pipelines does not automatically imply "Testing" or "Observability" skill unless those
-  are explicitly mentioned somewhere in the resume.
-- If you are genuinely unsure or the evidence is weak/indirect, mark matched=false. It is
-  much worse to falsely credit a skill the candidate doesn't have than to under-credit one
-  they do - a human recruiter will double check "missing" skills, but a false "matched"
-  skill misleads the whole screening process.
+  pipelines does not automatically imply "Testing" or "Observability" unless explicitly
+  mentioned somewhere in the resume.
+- If you are genuinely unsure or the evidence is weak/indirect, mark matched=false. A false
+  "matched" misleads the whole screening process far more than an under-credit does.
 
 TASK 2 - project_score (0-100): how relevant and strong are their projects for this
 specific role's requirements? No projects listed should not automatically mean 0 - use a
@@ -249,7 +316,7 @@ def judge_candidate(jd: JDRequirements, resume: ParsedResume, resume_text: str =
 def score_candidate(jd: JDRequirements, resume: ParsedResume, file_name: str, resume_text: str = "") -> dict:
     judgment = judge_candidate(jd, resume, resume_text)
 
-    skill_score, matched_skills, missing_skills = score_skills_from_judgment(jd, judgment)
+    skill_score, matched_skills, missing_skills = score_skills(jd, judgment, resume_text)
     experience_score, experience_detail = score_experience(jd, resume)
 
     final_score = round(
