@@ -256,17 +256,29 @@ STRICT RULES - DO NOT HALLUCINATE:
 - If you are genuinely unsure or the evidence is weak/indirect, mark matched=false. A false
   "matched" misleads the whole screening process far more than an under-credit does.
 
-TASK 2 - project_score (0-100): how relevant and strong are their projects for this
-specific role's requirements? No projects listed should not automatically mean 0 - use a
-low but non-zero score (10-20) if everything else is otherwise reasonable.
+TASK 2 - project_score (0-100): how relevant and strong are their projects for THIS
+SPECIFIC role's requirements?
+- No projects listed at all should not automatically mean 0 - use a low but non-zero
+  score (10-20), since not every good candidate lists projects.
+- But projects that DO exist, and are from a completely different domain than the role
+  (e.g. AI/software engineering projects for a finance/accounting/operations role, or
+  vice versa), genuinely contribute almost nothing to that specific job. Score those low
+  (0-10). Do not inflate this just to avoid giving a low number - a resume full of AI
+  agent projects is not evidence of accounting/reconciliation ability, and vice versa.
 
 TASK 3 - education_score (0-100): how well their education matches what the JD needs.
 - If required_education_field above is "Not specified", you MUST score 80-100 based on
   level only - do not penalize for field when the JD didn't ask for one.
-- If a field WAS specified: same/matching field = 85-100; a closely related technical
-  field (e.g. JD wants Computer Science, candidate has Electrical/Electronics/IT) =
-  45-65 partial credit, never treat a related engineering field as a total mismatch; a
-  clearly unrelated field = 10-30.
+- If a field WAS specified, distinguish two cases:
+  1. A DIFFERENT SPECIALIZATION WITHIN THE SAME BROAD DOMAIN (e.g. JD wants Computer
+     Science, candidate has Electrical/Electronics/IT - both technical/engineering
+     fields) = 45-65 partial credit, never a total mismatch.
+  2. A COMPLETELY DIFFERENT DOMAIN with no real overlap (e.g. JD wants Commerce/
+     Accounting and the candidate has an Electrical Engineering or other unrelated
+     technical degree, or vice versa - an engineering degree does not meaningfully
+     prepare someone for a specialized accounting/finance role) = 0-20, genuinely low.
+  Same/matching field = 85-100. Do not inflate a genuinely unrelated domain just to
+  avoid a low number.
 
 Explain the project and education scores briefly, and give one overall one-to-two
 sentence summary of why this candidate lands where they do.

@@ -30,7 +30,7 @@ class JDRequirements(BaseModel):
         default="",
         description=(
             "The specific field of study the JD asks for, e.g. 'Computer Science', "
-            "'Electrical Engineering'. Leave empty string if the JD does not specify a field."
+            "'Commerce'. Leave empty string if the JD does not specify a field."
         )
     )
     required_education_level: str = Field(
@@ -75,7 +75,7 @@ class ParsedResume(BaseModel):
 
     education_field: str = Field(
         default="",
-        description="Candidate's field of study, e.g. 'Computer Science', 'Electrical and Electronics Engineering'"
+        description="Candidate's field of study, e.g. 'Computer Science', 'Commerce', 'Electrical and Electronics Engineering'"
     )
     education_level: str = Field(
         default="",
@@ -122,7 +122,15 @@ class SectionJudgment(BaseModel):
     )
 
     project_score: int = Field(
-        description="0-100: how relevant/strong the candidate's projects are for this specific role"
+        description=(
+            "0-100: how relevant/strong the candidate's projects are for THIS SPECIFIC role. "
+            "No projects listed at all should not automatically mean 0 (use 10-20, since not "
+            "every good candidate lists projects). But projects that DO exist and are from a "
+            "completely different domain than the role (e.g. AI/software projects for a "
+            "finance/accounting/operations role, or vice versa) genuinely contribute almost "
+            "nothing to that specific job and should score low (0-10) - do not inflate this "
+            "just to avoid a low number."
+        )
     )
     project_reason: str = Field(description="One sentence explaining the project score")
 
@@ -131,10 +139,15 @@ class SectionJudgment(BaseModel):
             "0-100: how well the candidate's education matches what the JD needs. "
             "If required_education_field was NOT specified in the JD, you MUST score "
             "80-100 based on level only - do not penalize for field when the JD didn't "
-            "ask for one. If a field WAS specified: same field = 85-100; a closely "
-            "related technical field (e.g. JD wants Computer Science, candidate has "
-            "Electrical/Electronics/IT) = 45-65 partial credit, never a total mismatch; "
-            "a clearly unrelated field = 10-30."
+            "ask for one. If a field WAS specified, distinguish two cases: (1) a DIFFERENT "
+            "SPECIALIZATION WITHIN THE SAME BROAD DOMAIN as required (e.g. JD wants Computer "
+            "Science, candidate has Electrical/Electronics/IT - both technical/engineering "
+            "fields) = 45-65 partial credit, never a total mismatch. (2) a COMPLETELY "
+            "DIFFERENT DOMAIN with no real overlap (e.g. JD wants Commerce/Accounting and the "
+            "candidate has an Electrical Engineering or unrelated technical degree, or vice "
+            "versa - an engineering degree does not meaningfully prepare someone for a "
+            "specialized accounting/finance role) = 0-20, genuinely low. Same/matching field "
+            "= 85-100. Do not inflate a genuinely unrelated domain just to avoid a low number."
         )
     )
     education_reason: str = Field(
